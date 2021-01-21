@@ -1,0 +1,3 @@
+matplotlib
+NREL-rex>=0.2.42
+numpy
