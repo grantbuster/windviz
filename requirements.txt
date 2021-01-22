@@ -1,3 +1,7 @@
 matplotlib
 NREL-rex>=0.2.42
 numpy
+h5py
+scipy
+geopandas
+Pillow
