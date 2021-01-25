@@ -13,6 +13,8 @@ from datetime import datetime
 
 
 FP = './test_data.h5'
+TEST_DATA_DIR = os.path.dirname(os.path.realpath(__file__))
+os.chdir(TEST_DATA_DIR)
 
 
 def make_data():
