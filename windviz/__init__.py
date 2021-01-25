@@ -2,6 +2,7 @@
 """
 Wind Visualization
 """
+from windviz.windviz import WindViz
 from windviz.version import __version__
 
 __author__ = """Grant Buster"""

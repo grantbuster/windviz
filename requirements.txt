@@ -1,4 +1,3 @@
-geopandas
 h5py
 matplotlib
 NREL-rex>=0.2.42
