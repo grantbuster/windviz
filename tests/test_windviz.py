@@ -6,7 +6,6 @@ import os
 import shutil
 import numpy as np
 import pandas as pd
-from PIL import Image
 
 from windviz import WindViz
 from datetime import datetime
@@ -54,37 +53,21 @@ def make_data():
                   np.int16)
 
 
-def make_gif():
-    """Make a gif from the test files"""
-    fpath_out = './test.gif'
-    img_dir = './images'
-    file_tag = 'image_'
-    duration = 100
-    filenames = [f for f in os.listdir(img_dir)
-                 if f.endswith('.png')
-                 and file_tag in f]
-    filenames = sorted(
-        filenames, key=lambda x: int(x.replace('.png', '').split('_')[-1]))
-    img, *imgs = [Image.open(os.path.join(img_dir, fn)) for fn in filenames]
-    img.save(fp=fpath_out, format='GIF', append_images=imgs,
-             save_all=True, duration=duration, loop=0)
-
-
 def test_windviz():
     """Test the creation of wind particle flow images"""
     date0 = datetime(2021, 1, 1)
     date1 = datetime(2021, 1, 3)
 
-    WindViz.run(FP, date0, date1, dist_per_vel=50.0, ws_range=(0, 10),
+    WindViz.run(FP, date0, date1, dist_per_vel=50.0, cbar_range=(0, 10),
                 n_segments=10, n_saved_steps=9, n_lines=1000,
                 dist_threshold=100, linewidth=1,
                 random_reset=0.0,
                 vel_threshold=0,
                 init_all_segs=False,
                 make_resource_maps=False,
-                marker_size=20)
+                marker_size=20,
+                fp_gif_out='./test.gif')
 
-    make_gif()
     os.remove('./meta_kdtree.pkl')
     shutil.rmtree('./images/')
 

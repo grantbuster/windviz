@@ -30,9 +30,10 @@ class WindViz:
     TO_RAD = math.pi / 180
     TO_DEG = 180 / math.pi
 
-    def __init__(self, fp, date0, date1,
-                 ws_dset='windspeed_100m',
+    def __init__(self, fp_res, date0, date1,
+                 dset='windspeed_100m',
                  di_dset='winddirection_100m',
+                 di_option='from',
                  fp_out_base='./images/image_{}.png',
                  figsize=(10, 5),
                  dpi=200,
@@ -40,9 +41,10 @@ class WindViz:
                  ylim=(-90, 90),
                  line_buffer=2.0,
                  cbar_label='100m Windspeed (m/s)',
+                 cbar_range=(0, 15),
                  print_timestamp=True,
                  timestamp_loc=(0.12, 0.87),
-                 logo=None,
+                 fp_logo=None,
                  logo_scale=0.7,
                  n_lines=int(1000),
                  n_segments=20,
@@ -57,7 +59,6 @@ class WindViz:
                  face_color='k',
                  text_color='#969696',
                  cmap='viridis',
-                 ws_range=(0, 15),
                  fp_shape=None,
                  shape_color='#2f2f2f',
                  shape_edge_color='k',
@@ -71,18 +72,21 @@ class WindViz:
         """
         Parameters
         ----------
-        fp : str
-            Filepath to wtk h5 file.
+        fp_res : str
+            Filepath to resource file (wtk h5 file).
         date0 : datetime.datetime
             Datetime object that is the start of the time frame of
             interest (inclusive).
         date1 : datetime.datetime
             Datetime object that is the end of the time frame of
             interest (exclusive)
-        ws_dset : str
-            Windspeed dataset (e.g. windspeed_100m)
+        dset : str
+            Magnitude/color dataset (e.g. windspeed_100m)
         di_dset : str
-            Wind direction dataset (e.g. winddirection_100m)
+            Direction dataset (e.g. winddirection_100m). Typically this is the
+            source direction in degrees from north unless di_option="to"
+        di_option : str
+            Option to specify whether the direction is "from" or "to"
         fp_out_base : str
             Filepath to output image with "{}" to format the image index.
         figsize : tuple
@@ -98,11 +102,13 @@ class WindViz:
             image bounds.
         cbar_label : str
             Colorbar label
+        cbar_range : tuple
+            Data range for the colorbar corresponding to the dset data
         print_timestamp : bool
             Flag to print the timestamp in the image.
         timestamp_loc : tuple
             Location to print timestamp
-        logo : str | None
+        fp_logo : str | None
             Optional filepath to image file to place in bottom left of image.
         logo_scale : float
             Scaling factor to size the logo.
@@ -115,7 +121,7 @@ class WindViz:
         init_all_segs : bool
             Flag to initialize a line with all segments or just one.
         sub_iterations : int
-            Number of times to advance lines per wind data timestep.
+            Number of times to advance lines per data timestep.
         dist_per_vel : float
             Scale factor specifying how far to advance each line given a
             velocity of the line in (km / (m/s))
@@ -123,7 +129,7 @@ class WindViz:
             Velocity value (m/s) below which lines are reset.
         dist_threshold : float
             Distance threshold in decimal degrees. Lines further than this
-            value from the nearest wind data will be respawned.
+            value from the nearest data will be respawned.
         random_reset : float
             Value between 0 and 1 specifying a rate at which lines will
             be randomly reset.
@@ -135,8 +141,6 @@ class WindViz:
             Color of label and timestamp text.
         cmap : str
             matplotlib colormap name
-        ws_range : tuple
-            Windspeed range for colorbar in m/s
         fp_shape : str | None
             Optional filepath to a shape file to plot on the image with
             geopandas.
@@ -150,7 +154,7 @@ class WindViz:
             Plotting aspect ratio of the shape. This can affect the
             figure size.
         make_resource_maps : bool
-            Flag to save bitmaps of the wind speed and direction data.
+            Flag to save bitmaps of dset and di_dset
         resource_map_interval : int
             Interval to plot every n pixels for resource bitmaps.
         marker_size : float
@@ -159,14 +163,15 @@ class WindViz:
             Filepath for cKDTree caching.
         """
 
-        self.fp = fp
+        self.fp_res = fp_res
         self.date0 = date0
         self.date1 = date1
-        self.ws_dset = ws_dset
+        self.dset = dset
         self.di_dset = di_dset
+        self.di_option = di_option
         self.fp_out_base = fp_out_base
 
-        self.ws = None
+        self.data = None
         self.di = None
         self.tree = None
         self.meta = None
@@ -181,11 +186,11 @@ class WindViz:
         self.cbar_label = cbar_label
         self.print_timestamp = print_timestamp
         self.timestamp_loc = timestamp_loc
-        self.logo = logo
+        self.fp_logo = fp_logo
         self.logo_scale = logo_scale
-        self.n_lines = n_lines
-        self.n_segments = n_segments
-        self.n_saved_steps = n_saved_steps
+        self.n_lines = int(n_lines)
+        self.n_segments = int(n_segments)
+        self.n_saved_steps = int(n_saved_steps)
         self.init_all_segs = init_all_segs
         self.sub_iterations = sub_iterations
         self.dist_per_vel = dist_per_vel
@@ -196,7 +201,7 @@ class WindViz:
         self.face_color = face_color
         self.text_color = text_color
         self.cmap = cmap
-        self.ws_range = ws_range
+        self.cbar_range = cbar_range
         self.fp_shape = fp_shape
         self.shape_color = shape_color
         self.shape_edge_color = shape_edge_color
@@ -220,8 +225,8 @@ class WindViz:
         self.scale_y = self.meta.latitude.max() - self.meta.latitude.min()
 
         cmap_obj = plt.get_cmap(cmap)
-        cNorm = colors.Normalize(vmin=np.min(self.ws_range),
-                                 vmax=np.max(self.ws_range))
+        cNorm = colors.Normalize(vmin=np.min(self.cbar_range),
+                                 vmax=np.max(self.cbar_range))
         self.scalarMap = cmx.ScalarMappable(norm=cNorm, cmap=cmap_obj)
         mpl.rcParams['text.color'] = self.text_color
         mpl.rcParams['axes.labelcolor'] = self.text_color
@@ -236,12 +241,12 @@ class WindViz:
         Returns
         -------
         time_slice : slice
-            Row slice object that can be used to slice data from fp.
+            Row slice object that can be used to slice data from fp_res.
         time_index : pd.Datetimeindex
             Datetimeindex for the time frame of interest
         """
 
-        with Resource(self.fp) as res:
+        with Resource(self.fp_res) as res:
             time_index = res.time_index.tz_localize(None)
 
         mask = (time_index >= self.date0) & (time_index < self.date1)
@@ -256,10 +261,10 @@ class WindViz:
         Returns
         -------
         meta : pd.DataFrame
-            Meta data from fp.
+            Meta data from fp_res.
         """
 
-        with Resource(self.fp) as res:
+        with Resource(self.fp_res) as res:
             self.meta = res.meta
 
         return self.meta
@@ -268,25 +273,34 @@ class WindViz:
         """
         Returns
         -------
-        ws : np.ndarray
-            2D array (time x sites) of windspeed data in m/s
+        data : np.ndarray
+            2D array (time x sites) of the primary dset (e.g. windspeed in m/s)
         di : np.ndarray
-            2D array (time x sites) of windspeed direction data in radians
-            from west.
+            2D array (time x sites) of direction data in radians measured
+            counter-clockwise from east such that dx = delta*np.cos(di) and
+            dy = delta*np.sin(di). This also implies that if
+            self.di_option="from" then this di output has converted the
+            direction to "to"
         """
 
         logger.info('Reading data...')
-        with Resource(self.fp) as res:
-            self.ws = res[self.ws_dset, self.time_slice, :]
+        with Resource(self.fp_res) as res:
+            self.data = res[self.dset, self.time_slice, :]
             di = res[self.di_dset, self.time_slice, :]
-            di = 270 - di.copy()
+
+            if self.di_option.lower() == 'from':
+                di = 270 - di.copy()
+            elif self.di_option.lower() == 'to':
+                di = 90 - di.copy()
+
             self.di = di * (np.pi / 180)
 
         logger.debug('Data stats: {} {} {}'
-                     .format(self.ws.min(), self.ws.mean(), self.ws.max()))
+                     .format(self.data.min(), self.data.mean(),
+                             self.data.max()))
         logger.info('Data read complete')
 
-        return self.ws, self.di
+        return self.data, self.di
 
     def make_tree(self):
         """
@@ -454,7 +468,7 @@ class WindViz:
         for i in range(1, lines.shape[0]):
             query_coords = lines[i - 1, :, :].T
             d, ind = self.tree.query(query_coords)
-            vel = self.ws[ti][ind]
+            vel = self.data[ti][ind]
             vel[d > self.dist_threshold] = 0.0
             velocities[i, 0, :] = vel
             direction = self.di[ti][ind]
@@ -479,8 +493,8 @@ class WindViz:
         ti : int
             Enumerated time index
         """
-        dset_names = [self.ws_dset, self.di_dset]
-        res_datasets = [self.ws, self.di]
+        dset_names = [self.dset, self.di_dset]
+        res_datasets = [self.data, self.di]
         for dset_name, res_data in zip(dset_names, res_datasets):
             res_plot_fname = self.fp_out_base.replace(
                 '.png', '_{}.png'.format(dset_name))
@@ -526,6 +540,11 @@ class WindViz:
             (number_of_segments_per_line, xy_coords, number_of_lines)
         timestamp : timestamp
             Single timestamp from the pandas Datetimeindex object.
+
+        Returns
+        -------
+        fp_out : str
+            Filepath to the output image
         """
 
         fig = plt.figure(figsize=self.figsize, facecolor=self.face_color)
@@ -560,8 +579,8 @@ class WindViz:
 
         n_cbar = 100
         b = ax.scatter([1e6] * n_cbar, [1e6] * n_cbar,
-                       c=np.linspace(np.min(self.ws_range),
-                                     np.max(self.ws_range), n_cbar),
+                       c=np.linspace(np.min(self.cbar_range),
+                                     np.max(self.cbar_range), n_cbar),
                        s=0.00001, cmap=self.cmap)
         cbar = plt.colorbar(b)
         ticks = plt.getp(cbar.ax, 'yticklabels')
@@ -576,30 +595,32 @@ class WindViz:
             plt.text(self.timestamp_loc[0], self.timestamp_loc[1],
                      str(timestamp), transform=fig.transFigure)
 
-        if isinstance(self.logo, str):
+        if isinstance(self.fp_logo, str):
             if not isinstance(self.logo_scale, float):
                 self.logo_scale = 1.0
-            im = Image.open(self.logo)
+            im = Image.open(self.fp_logo)
             size = (int(self.logo_scale * im.size[0]),
                     int(self.logo_scale * im.size[1]))
             im = im.resize(size)
             im = np.array(im).astype(float) / 255
             fig.figimage(im, 0, 0)
 
-        fp = self.fp_out_base.format(self.i_fname)
+        fp_out = self.fp_out_base.format(self.i_fname)
         self.i_fname += 1
-        fig.savefig(fp, dpi=self.dpi, bbox_inches='tight',
+        fig.savefig(fp_out, dpi=self.dpi, bbox_inches='tight',
                     facecolor=self.face_color)
-        logger.info('Saved: {}'.format(fp))
+        logger.info('Saved: {}'.format(fp_out))
         plt.close()
+        return fp_out
 
     @classmethod
-    def run(cls, fp, date0, date1, **kwargs):
+    def run(cls, fp_res, date0, date1, fp_gif_out=None, duration=100,
+            **kwargs):
         """Run the windviz and save images to disk.
 
         Parameters
         ----------
-        fp : str
+        fp_res : str
             Filepath to wtk h5 file.
         date0 : datetime.datetime
             Datetime object that is the start of the time frame of
@@ -607,11 +628,15 @@ class WindViz:
         date1 : datetime.datetime
             Datetime object that is the end of the time frame of
             interest (exclusive)
+        fp_gif_out : str | None
+            Optional filepath to make a gif from the generated images
+        duration : int
+            Duration of each image frame in the gif in ms
         kwargs : dict
             Namespace of kwargs for WindViz initialization.
         """
 
-        obj = cls(fp, date0, date1, **kwargs)
+        obj = cls(fp_res, date0, date1, **kwargs)
 
         obj.get_time_index()
         obj.get_data()
@@ -619,11 +644,19 @@ class WindViz:
         obj.init_arrays()
         velocities, lines = obj.init_arrays()
 
+        fps = []
         for ti, timestamp in enumerate(obj.time_index):
             logger.info('Working on index {}, timestamp: {}'
                         .format(ti, timestamp))
             for _ in range(obj.sub_iterations):
                 velocities, lines = obj.advance_lines(ti, velocities, lines)
-                obj.draw(velocities, lines, timestamp)
+                fp_out = obj.draw(velocities, lines, timestamp)
+                fps.append(fp_out)
                 if obj.make_resource_maps:
                     obj.save_resource_maps(ti)
+
+        if fp_gif_out is not None:
+            img, *imgs = [Image.open(fp) for fp in fps]
+            img.save(fp=fp_gif_out, format='GIF', append_images=imgs,
+                     save_all=True, duration=duration, loop=0)
+            logger.info('Saved gif: {}'.format(fp_gif_out))
