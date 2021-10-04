@@ -31,9 +31,13 @@ class WindViz:
     TO_DEG = 180 / math.pi
 
     def __init__(self, fp_res, date0, date1,
-                 dset='windspeed_100m',
-                 di_dset='winddirection_100m',
-                 di_option='from',
+                 color_dset='windspeed_100m',
+                 vel_dset='windspeed_100m',
+                 dir_dset='winddirection_100m',
+                 fp_color=None,
+                 fp_vel=None,
+                 fp_dir=None,
+                 dir_option='from',
                  fp_out_base='./images/image_{}.png',
                  figsize=(10, 5),
                  dpi=200,
@@ -73,19 +77,34 @@ class WindViz:
         Parameters
         ----------
         fp_res : str
-            Filepath to resource file (wtk h5 file).
+            Filepath to resource file (wtk h5 file) with color_dset, vel_dset,
+            and dir_dset. Can be overriden for each dset with separate fp_*
+            kwargs.
         date0 : datetime.datetime
             Datetime object that is the start of the time frame of
             interest (inclusive).
         date1 : datetime.datetime
             Datetime object that is the end of the time frame of
             interest (exclusive)
-        dset : str
-            Magnitude/color dataset (e.g. windspeed_100m)
-        di_dset : str
+        color_dset : str
+            Magnitude/color dataset (e.g. windspeed_100m). Can be None if all
+            particle flows should be colored the same.
+        vel_dset : str
+            Particle flow velocity dataset (e.g. windspeed_100m). Can be None
+            if all particles should travel the same speed.
+        dir_dset : str
             Direction dataset (e.g. winddirection_100m). Typically this is the
-            source direction in degrees from north unless di_option="to"
-        di_option : str
+            source direction in degrees from north unless dir_option="to"
+        fp_color : str
+            Filepath to resource file (wtk h5 file) with the color_dset.
+            Defaults to fp_res.
+        fp_vel : str
+            Filepath to resource file (wtk h5 file) with the vel_dset. Defaults
+            to fp_res.
+        fp_dir : str
+            Filepath to resource file (wtk h5 file) with the dir_dset. Defaults
+            to fp_res.
+        dir_option : str
             Option to specify whether the direction is "from" or "to"
         fp_out_base : str
             Filepath to output image with "{}" to format the image index.
@@ -103,7 +122,7 @@ class WindViz:
         cbar_label : str
             Colorbar label
         cbar_range : tuple
-            Data range for the colorbar corresponding to the dset data
+            Data range for the colorbar corresponding to the color_dset data
         print_timestamp : bool
             Flag to print the timestamp in the image.
         timestamp_loc : tuple
@@ -154,7 +173,7 @@ class WindViz:
             Plotting aspect ratio of the shape. This can affect the
             figure size.
         make_resource_maps : bool
-            Flag to save bitmaps of dset and di_dset
+            Flag to save bitmaps of color_dset and dir_dset
         resource_map_interval : int
             Interval to plot every n pixels for resource bitmaps.
         marker_size : float
@@ -166,13 +185,18 @@ class WindViz:
         self.fp_res = fp_res
         self.date0 = date0
         self.date1 = date1
-        self.dset = dset
-        self.di_dset = di_dset
-        self.di_option = di_option
+        self.color_dset = color_dset
+        self.vel_dset = vel_dset
+        self.dir_dset = dir_dset
+        self.fp_color = fp_color if fp_color is not None else fp_res
+        self.fp_vel = fp_vel if fp_vel is not None else fp_res
+        self.fp_dir = fp_dir if fp_dir is not None else fp_res
+        self.dir_option = dir_option
         self.fp_out_base = fp_out_base
 
-        self.data = None
-        self.di = None
+        self.color_data = None
+        self.vel_data = None
+        self.dir_data = None
         self.tree = None
         self.meta = None
         self.time_slice = None
@@ -273,34 +297,54 @@ class WindViz:
         """
         Returns
         -------
-        data : np.ndarray
-            2D array (time x sites) of the primary dset (e.g. windspeed in m/s)
-        di : np.ndarray
+        vel_data : np.ndarray
+            2D array (time x sites) of the velocity dataset (e.g. windspeed in
+            m/s)
+        color_data : np.ndarray
+            2D array (time x sites) of the color_dset (e.g. windspeed in m/s)
+        dir : np.ndarray
             2D array (time x sites) of direction data in radians measured
-            counter-clockwise from east such that dx = delta*np.cos(di) and
-            dy = delta*np.sin(di). This also implies that if
-            self.di_option="from" then this di output has converted the
+            counter-clockwise from east such that dx = delta*np.cos(dir) and
+            dy = delta*np.sin(dir). This also implies that if
+            self.dir_option="from" then this dir output has converted the
             direction to "to"
         """
 
         logger.info('Reading data...')
-        with Resource(self.fp_res) as res:
-            self.data = res[self.dset, self.time_slice, :]
-            di = res[self.di_dset, self.time_slice, :]
 
-            if self.di_option.lower() == 'from':
-                di = 270 - di.copy()
-            elif self.di_option.lower() == 'to':
-                di = 90 - di.copy()
+        with Resource(self.fp_dir) as res:
+            dir_data = res[self.dir_dset, self.time_slice, :]
 
-            self.di = di * (np.pi / 180)
+        self.color_data = np.ones_like(dir_data)
+        if self.color_dset is not None:
+            with Resource(self.fp_color) as res:
+                self.color_data = res[self.color_dset, self.time_slice, :]
 
-        logger.debug('Data stats: {} {} {}'
-                     .format(self.data.min(), self.data.mean(),
-                             self.data.max()))
+        self.vel_data = np.ones_like(dir_data)
+        if self.vel_dset is not None:
+            with Resource(self.fp_vel) as res:
+                self.vel_data = res[self.vel_dset, self.time_slice, :]
+
+        if self.dir_option.lower() == 'from':
+            dir_data = 270 - dir_data.copy()
+        elif self.dir_option.lower() == 'to':
+            dir_data = 90 - dir_data.copy()
+
+        self.dir_data = dir_data * (np.pi / 180)
+
+        logger.debug('Velocity data stats from dataset "{}": {} {} {}'
+                     .format(self.vel_dset,
+                             self.vel_data.min(),
+                             self.vel_data.mean(),
+                             self.vel_data.max()))
+        logger.debug('Color data stats from dataset "{}": {} {} {}'
+                     .format(self.color_dset,
+                             self.color_data.min(),
+                             self.color_data.mean(),
+                             self.color_data.max()))
         logger.info('Data read complete')
 
-        return self.data, self.di
+        return self.vel_data, self.color_data, self.dir_data
 
     def make_tree(self):
         """
@@ -327,6 +371,9 @@ class WindViz:
         """
         Returns
         -------
+        color_data : np.ndarray
+            3D array of color values for each line:
+            (number_of_segments_per_line, 1, number_of_lines)
         velocities : np.ndarray
             3D array of velocities for each line:
             (number_of_segments_per_line, 1, number_of_lines)
@@ -334,9 +381,10 @@ class WindViz:
             3D array of coordinates for each segment of each lines:
             (number_of_segments_per_line, xy_coords, number_of_lines)
         """
+        color_data = np.nan * np.ones((self.n_segments, 1, self.n_lines))
         velocities = np.nan * np.ones((self.n_segments, 1, self.n_lines))
         lines = np.nan * np.ones((self.n_segments, 2, self.n_lines))
-        return velocities, lines
+        return color_data, velocities, lines
 
     @staticmethod
     def get_line_means(velocities, lines):
@@ -392,7 +440,7 @@ class WindViz:
         delta_lon = (dist / r) * cls.TO_DEG
         return delta_lon
 
-    def advance_lines(self, ti, velocities, lines):
+    def advance_lines(self, ti, color_data, velocities, lines):
         """Advance the position of the lines based on their nearest velocities
         and directions.
 
@@ -400,6 +448,9 @@ class WindViz:
         ----------
         ti : int
             Enumerated time index corresponding to timestamp
+        color_data : np.ndarray
+            3D array of color values for each line:
+            (number_of_segments_per_line, 1, number_of_lines)
         velocities : np.ndarray
             3D array of velocities for each line:
             (number_of_segments_per_line, 1, number_of_lines)
@@ -409,6 +460,9 @@ class WindViz:
 
         Returns
         -------
+        color_data : np.ndarray
+            3D array of color values for each line:
+            (number_of_segments_per_line, 1, number_of_lines)
         velocities : np.ndarray
             3D array of velocities for each line:
             (number_of_segments_per_line, 1, number_of_lines)
@@ -468,10 +522,11 @@ class WindViz:
         for i in range(1, lines.shape[0]):
             query_coords = lines[i - 1, :, :].T
             d, ind = self.tree.query(query_coords)
-            vel = self.data[ti][ind]
+            vel = self.vel_data[ti][ind]
             vel[d > self.dist_threshold] = 0.0
             velocities[i, 0, :] = vel
-            direction = self.di[ti][ind]
+            color_data[i, 0, :] = self.color_data[ti][ind]
+            direction = self.dir_data[ti][ind]
             dx = self.dist_per_vel * vel * np.cos(direction)
             dy = self.dist_per_vel * vel * np.sin(direction)
             dy = self.dist_to_latitude(dy)
@@ -482,7 +537,7 @@ class WindViz:
             lines[i, 0, mask] = lines[i - 1, 0, mask] + dx[mask]
             lines[i, 1, mask] = lines[i - 1, 1, mask] + dy[mask]
 
-        return velocities, lines
+        return color_data, velocities, lines
 
     def save_resource_maps(self, ti):
         """Save resource (windspeed and direction) bitmaps for a given time
@@ -493,8 +548,8 @@ class WindViz:
         ti : int
             Enumerated time index
         """
-        dset_names = [self.dset, self.di_dset]
-        res_datasets = [self.data, self.di]
+        dset_names = [self.vel_dset, self.color_dset, self.dir_dset]
+        res_datasets = [self.vel_data, self.color_data, self.dir_data]
         for dset_name, res_data in zip(dset_names, res_datasets):
             res_plot_fname = self.fp_out_base.replace(
                 '.png', '_{}.png'.format(dset_name))
@@ -527,13 +582,13 @@ class WindViz:
             plt.savefig(res_plot_fname.format(ti))
             plt.close()
 
-    def draw(self, velocities, lines, timestamp):
+    def draw(self, color_data, lines, timestamp):
         """Draw a particle flow image and save to file.
 
         Parameters
         ----------
-        velocities : np.ndarray
-            3D array of velocities for each line:
+        color_data : np.ndarray
+            3D array of color values for each line
             (number_of_segments_per_line, 1, number_of_lines)
         lines : np.ndarray
             3D array of coordinates for each segment of each lines:
@@ -565,15 +620,15 @@ class WindViz:
                 ax.set_aspect(self.shape_aspect)
 
         line_inputs = []
-        colors = []
+        line_colors = []
         for k in range(lines.shape[2]):
-            v_line = np.nanmean(velocities[:, 0, k])
-            color = self.scalarMap.to_rgba(v_line)
+            c_line = np.nanmean(color_data[:, 0, k])
+            color = self.scalarMap.to_rgba(c_line)
             line_inputs.append(lines[:, :, k])
-            colors.append(color)
+            line_colors.append(color)
 
         collection = mpl.collections.LineCollection(line_inputs,
-                                                    colors=colors,
+                                                    colors=line_colors,
                                                     linewidth=self.linewidth)
         ax.add_collection(collection)
 
@@ -642,15 +697,16 @@ class WindViz:
         obj.get_data()
         obj.make_tree()
         obj.init_arrays()
-        velocities, lines = obj.init_arrays()
+        color_data, velocities, lines = obj.init_arrays()
 
         fps = []
         for ti, timestamp in enumerate(obj.time_index):
             logger.info('Working on index {}, timestamp: {}'
                         .format(ti, timestamp))
             for _ in range(obj.sub_iterations):
-                velocities, lines = obj.advance_lines(ti, velocities, lines)
-                fp_out = obj.draw(velocities, lines, timestamp)
+                out = obj.advance_lines(ti, color_data, velocities, lines)
+                color_data, velocities, lines = out
+                fp_out = obj.draw(color_data, lines, timestamp)
                 fps.append(fp_out)
                 if obj.make_resource_maps:
                     obj.save_resource_maps(ti)

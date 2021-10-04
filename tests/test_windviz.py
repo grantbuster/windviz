@@ -45,12 +45,10 @@ def make_data():
         f.meta = meta
         f.time_index = time_index
 
-    f.add_dataset(FP, 'windspeed_100m', ws,
-                  {'units': 'm/s', 'scale_factor': 10},
-                  np.int16)
-    f.add_dataset(FP, 'winddirection_100m', di,
-                  {'units': 'degrees', 'scale_factor': 0.1},
-                  np.int16)
+    f.add_dataset(FP, 'windspeed_100m', ws, dtype=np.int16,
+                  attrs={'units': 'm/s', 'scale_factor': 10})
+    f.add_dataset(FP, 'winddirection_100m', di, dtype=np.int16,
+                  attrs={'units': 'degrees', 'scale_factor': 0.1})
 
 
 def test_windviz():
