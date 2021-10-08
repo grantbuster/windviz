@@ -354,16 +354,16 @@ class WindViz:
             cKDTree of meta lat/lon
         """
         if not os.path.exists(self.tree_file):
-            logger.info('making tree...')
+            logger.info('Making tree...')
             self.tree = cKDTree(self.meta[['longitude', 'latitude']])
-            logger.info('tree complete')
             with open(self.tree_file, 'wb') as pkl:
                 pickle.dump(self.tree, pkl)
+            logger.info('Tree complete, saved: {}'.format(self.tree_file))
         else:
-            logger.info('loading tree...')
+            logger.info('Loading tree: {}'.format(self.tree_file))
             with open(self.tree_file, 'rb') as pkl:
                 self.tree = pickle.load(pkl)
-            logger.info('Tree loaded')
+            logger.info('Tree loaded.')
 
         return self.tree
 
@@ -536,6 +536,24 @@ class WindViz:
             mask = np.isnan(lines[i, 0, :])
             lines[i, 0, mask] = lines[i - 1, 0, mask] + dx[mask]
             lines[i, 1, mask] = lines[i - 1, 1, mask] + dy[mask]
+
+            n_far = (d > self.dist_threshold)
+            if n_far.sum() > 0.9 * n_far.size:
+                msg = ('{} out of {} line coordinates were greater '
+                       'than the dist threshold! '
+                       'Something went wrong. Check your kdtree.'
+                       .format(n_far.sum(), d.size))
+                logger.error(msg)
+                raise RuntimeError(msg)
+
+        if np.isnan(lines).all():
+            msg = 'All lines had NaN values!'
+            logger.error(msg)
+            raise RuntimeError(msg)
+
+        logger.debug('Line coordinates have {} NaN values out of {}'
+                     .format(np.isnan(lines).sum(),
+                             lines.shape[0] * lines.shape[1] * lines.shape[2]))
 
         return color_data, velocities, lines
 
